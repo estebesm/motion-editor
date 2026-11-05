@@ -4,14 +4,77 @@
 озвучивает, Remotion рендерит. Плоский моушн-дизайн: кинетическая типографика, морфинг форм, плавная камера.
 Всё на русском, шрифт Dela Gothic One (или свой).
 
-## Быстрый старт
+## Установка
+
+Проверено на macOS (Apple Silicon). На Linux работает так же, команды установки — через свой пакетный менеджер.
+
+### 1. Обязательно
+
+| Что | Зачем | Как поставить |
+|---|---|---|
+| **Node.js 23.6+** | движок (TypeScript запускается напрямую, без сборки) и рендер Remotion | `brew install node` |
+| **ffmpeg + ffprobe** | озвучка, вырезание фона логотипов, превью файлов, звуки, сведение | `brew install ffmpeg` |
+| **Ключ Gemini API** | ИИ-режиссёр, озвучка (Gemini TTS), проверка озвучки распознаванием речи | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
+| **Интернет** | Gemini; при первом запуске — npm-пакеты, Chrome для рендера (Remotion скачивает сам, ~450 МБ), библиотека звуков с Openverse | — |
 
 ```bash
-brew install node ffmpeg                       # Node.js 23.6+
-echo "GEMINI_API_KEY=..." > .env               # ключ: https://aistudio.google.com/apikey
-cp -r examples/урок-резервные-копии videos/    # пример урока
-./run.sh                                        # меню: создать проект / сгенерировать видео
+git clone https://github.com/estebesm/motion-editor.git
+cd motion-editor
+echo "GEMINI_API_KEY=ваш-ключ" > .env
+./run.sh            # первый запуск сам поставит npm-зависимости (engine/node_modules, ~1 ГБ)
 ```
+
+Проверить, что всё работает, — собрать пример урока без озвучки. Gemini при этом не вызывается, но ключ в `.env`
+всё равно должен быть. Займёт около минуты, первый раз дольше (скачивается Chrome):
+
+```bash
+cp -r examples/урок-резервные-копии videos/
+./run.sh --auto --video=урок-резервные-копии --draft --без-звука
+# → videos/урок-резервные-копии/outputs/урок-резервные-копии (без звука).mp4
+```
+
+Ограничения Gemini: у бесплатного ключа дневной лимит озвучки. Когда он кончается, генератор сам переходит на
+следующую модель озвучки, а уже озвученные фразы берёт из кэша (`videos/<имя>/.project/tts/`).
+
+### 2. Необязательно: звуки лучше
+
+Без этих инструментов звуковые эффекты всё равно есть: движок сам берёт записи из `sfx/library/` и сводит их
+(см. «Звуки»). Инструменты ниже делают отбор и сведение точнее.
+
+**earshot** — «слушает» звуки и выбирает лучшие, сравнивает звук ролика с профессиональными
+([github.com/Leonxlnx/earshot](https://github.com/Leonxlnx/earshot), MIT). Нужен Python 3.10+. Ставится в `tools/`,
+движок находит его там сам:
+
+```bash
+brew install python@3.12
+git clone https://github.com/Leonxlnx/earshot tools/earshot
+python3.12 -m venv tools/.venv
+tools/.venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu   # CPU-версия, без CUDA
+tools/.venv/bin/pip install -e tools/earshot
+```
+
+При первом отборе earshot скачивает модели (~1 ГБ в `tools/earshot/.cache`) и думает несколько минут. Дальше всё берётся из кэша.
+
+**real-sfx** — скилл Claude Code, сводит эффекты из вашей собственной библиотеки записей поверх чистого голоса.
+Публичной ссылки нет: папку скилла нужно получить у владельца и положить в `~/.claude/skills/real-sfx`.
+Затем подключить свою библиотеку звуков и поставить ffmpeg с фильтрами `rubberband` и `drawtext`:
+
+```bash
+brew install ffmpeg-full             # движок сам берёт его из /opt/homebrew/opt/ffmpeg-full для real-sfx
+cd ~/.claude/skills/real-sfx
+python3 scripts/setup.py init --library main="/путь/к/звукам" --uisfx --index
+python3 scripts/setup.py check
+```
+
+Если real-sfx нет (нет файла `~/.claude/skills/real-sfx/library_index.json`), этот шаг пропускается без ошибок.
+
+### Если что-то не так
+
+- **«Нет GEMINI_API_KEY»** — нет файла `.env` в корне репозитория или в нём нет строки с ключом.
+- **«Нужен Node.js 23.6+»** — `brew upgrade node`.
+- **Рендер долго стоит на «Сборка проекта»** при первом запуске — Remotion скачивает Chrome, это бывает один раз.
+- **Звуки пропущены** — Openverse недоступен. Ролик соберётся без эффектов; в следующий раз библиотека докачается.
+- **Собрать библиотеку звуков заново** — удалите `sfx/library/`.
 
 ## Структура
 
@@ -26,6 +89,8 @@ videos/                    ← ваши видео (в git не попадают
     ├── sources/           ← картинки, видео, музыка
     └── outputs/           ← готовые версии видео
 engine/                    ← код генератора
+sfx/library/               ← библиотека звуков (скачивается при первом запуске)
+tools/                     ← необязательные инструменты (earshot)
 ```
 
 ## Как сделать видео
@@ -95,12 +160,7 @@ engine/                    ← код генератора
 послушать) и `<имя>-эффекты.wav` (дорожка одних эффектов). Если real-sfx или earshot не установлены — эффекты
 сводит сам движок.
 
-Установить earshot (сторонний, MIT, https://github.com/Leonxlnx/earshot):
-
-```bash
-git clone https://github.com/Leonxlnx/earshot tools/earshot
-python3 -m venv tools/.venv && tools/.venv/bin/pip install -e tools/earshot
-```
+Как поставить earshot и real-sfx — в разделе «Установка».
 
 ## Скриншоты и записи экрана
 
@@ -112,9 +172,3 @@ python3 -m venv tools/.venv && tools/.venv/bin/pip install -e tools/earshot
 
 Без озвучки (например, если кончился лимит Gemini): `./run.sh --auto --video=<имя> --без-звука` — тайминги слов
 считаются по темпу речи, файл получает пометку «(без звука)».
-
-## Нужно
-
-- Node.js 23.6+, ffmpeg (`brew install node ffmpeg`)
-- Ключ Gemini API в `.env` (`GEMINI_API_KEY=...`)
-- Необязательно: Python 3.10+ для earshot
