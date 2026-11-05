@@ -28,7 +28,7 @@ echo "GEMINI_API_KEY=ваш-ключ" > .env
 всё равно должен быть. Займёт около минуты, первый раз дольше (скачивается Chrome):
 
 ```bash
-cp -r examples/урок-резервные-копии videos/
+mkdir -p videos && cp -r examples/урок-резервные-копии videos/
 ./run.sh --auto --video=урок-резервные-копии --draft --без-звука
 # → videos/урок-резервные-копии/outputs/урок-резервные-копии (без звука).mp4
 ```
